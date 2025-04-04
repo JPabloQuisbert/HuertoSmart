@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lectura Analógica ESP8266</title>
+    <style>
+        /* Estilo para mostrar el estado de la conexión */
+        #status {
+            font-size: 20px;
+            color: green;
+        }
+        #status.disconnected {
+            color: red;
+        }
+    </style>
+</head>
+<body>
+    <!-- Mostrar el estado de la conexión WebSocket -->
+    <p id="status">Conectado</p>
+    <p id="errores">errores detectados</p>
+    <h1>Lectura Analógica en Tiempo Real</h1>
+    <p>Valor del sensor: <span id="sensorValue">Esperando...</span></p>
+    <h1>Control de Foco - ESP8266</h1>
+    <button onclick="controlPin('ON')">Encender Foco</button>
+    <button onclick="controlPin('OFF')">Apagar Foco</button>
+    <script>
+        // Conectar al WebSocket del ESP8266
+        const socket = new WebSocket('ws://192.168.16.236:81'); // Reemplaza con la IP real 192.168.16.236
+        
+        let pingInterval;
+        let lastPingTime = Date.now();  // Tiempo de la última vez que se hizo un ping
+
+        // Cuando recibas un mensaje del servidor WebSocket
+        socket.onmessage = function(event) {
+            // Actualizar el valor de la lectura analógica en la página
+            document.getElementById('sensorValue').textContent = event.data;
+            // Resetear el tiempo del último "ping" al recibir cualquier mensaje
+            lastPingTime = Date.now();
+        };
+
+        socket.onopen = function() {
+            console.log('Conectado al servidor WebSocket');
+            document.getElementById('status').textContent = "Conectado";
+            document.getElementById('status').classList.remove('disconnected'); // Asegura que no esté en color rojo
+            pingInterval = setInterval(checkConnection, 100); // Verifica cada 5 segundos
+        };
+
+        socket.onclose = function() {
+            console.log('Desconectado del servidor WebSocket');
+            document.getElementById('status').textContent = "Conexión perdida";
+            document.getElementById('status').classList.add('disconnected'); // Cambiar color a rojo
+            clearInterval(pingInterval); // Detener el intervalo de ping
+        };
+        socket.onerror = function(error) {
+            console.error("Error en WebSocket: ", error);
+            document.getElementById('errores').textContent = "ERROR!";
+        };
+        function controlPin(accion) {
+            if (socket.readyState === WebSocket.OPEN) {
+                socket.send(accion);  // Enviar "ON" o "OFF" al servidor WebSocket
+            } else {
+                console.log("WebSocket no está conectado.");
+                document.getElementById('status').textContent = "WebSocket no está conectado.";
+                document.getElementById('status').classList.add('disconnected'); // Cambiar color a rojo
+            }
+        }
+        // Función para verificar la conexión WebSocket
+        function checkConnection() {
+            if (Date.now() - lastPingTime > 200) { // Si han pasado más de 10 segundos sin respuesta
+                console.log("Conexión perdida, no hay respuesta del servidor");
+                socket.close();  // Cerrar la conexión WebSocket (esto activará el onclose)
+            } else {
+                socket.send("ping");  // Enviar un "ping" al servidor para verificar la conexión
+            }
+        }
+    </script>
+</body>
+</html>

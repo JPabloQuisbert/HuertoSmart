@@ -61,7 +61,7 @@ float temperature;
 unsigned long previousMillis = 0;  // Almacena el tiempo en milisegundos de la última lectura
 const long interval = 2000;        //tiempo que tarda en leer el DHT22 
 
-
+// =================Funciones de manejo de EERPOM
 void borrarEERPOM(){
   // write a 0 to all 512 bytes of the EEPROM
   for (int i = 0; i < 512; i++) { EEPROM.write(i, 0); }
@@ -135,8 +135,10 @@ Salida leerSalidaDeEEPROM(int direccion) {
   
   return salida;
 }
+// =================FIN Funciones de manejo de EERPOM
 
 
+// ================= Manejos Solicitudes al servidor http:
 // Maneja la solicitud GET para la página principal
 void handleRoot() {
   String html = "<html><meta charset='UTF-8'><body>";
@@ -248,13 +250,65 @@ void handlePost() {
     datoRecibido.estado=server.arg("estado").toInt();
 
     guardarSalidaEnEEPROM(direccionesEEPROM[datoRecibido.gpio-1], datoRecibido);
-
+    
+    digitalWrite(pines[datoRecibido.gpio-1],datoRecibido.estado);
+    Serial.println(datoRecibido.gpio);
+    Serial.println(datoRecibido.estado);
     server.send(200, "text/plain", "Datos actualizados exitosamente");
   } else {
     server.send(400, "text/plain", "Faltan parámetros");
   }
 }
 
+void handleControl() {
+  String pin = server.arg("pin");
+  String state = server.arg("state");
+
+  int pinNumber = pin.toInt();
+  int pinState = (state == "ON") ? HIGH : LOW;
+
+  // Activa o desactiva el pin correspondiente
+  digitalWrite(pinNumber, pinState);
+  Serial.println(pinState);
+  // Responder al cliente
+  server.send(200, "text/plain", "Pin " + pin + " set to " + state);
+}
+// ================= Fin Manejos Solicitudes al servidor http
+
+// ================= WEB socket =================
+void webSocketEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t length) {
+  switch (type) {
+    case WStype_DISCONNECTED:
+      Serial.printf("Cliente %u desconectado\n", num);
+      break;
+    case WStype_CONNECTED:
+      {
+        IPAddress ip = webSocket.remoteIP(num);
+        Serial.printf("Nuevo cliente conectado desde %d.%d.%d.%d\n", ip[0], ip[1], ip[2], ip[3]);
+      }
+      break;
+    case WStype_TEXT:
+      // Puedes agregar lógica aquí si deseas recibir datos desde el cliente
+      String mensaje = String((char *)payload);  // Convertir el mensaje a String
+        Serial.println("Mensaje recibido: " + mensaje);
+        
+        if (mensaje == "ON") {
+          digitalWrite(pines[3], HIGH);  // Enciende el pin
+          Serial.println("Foco Encendido");
+        }
+        else if (mensaje == "OFF") {
+          digitalWrite(pines[3], LOW);  // Apaga el pin
+          Serial.println("Foco Apagado");
+        }
+        else {
+          Serial.println("Comando desconocido");
+        }
+      break;
+  }
+}
+// ================= FIN WEB socket =================
+
+// ================= Otras Funciones =================
 void primeraConexion(){
   // Imprime los valores para depuración
   Serial.print("Intentando conectar a la red de eeprom: ");
@@ -290,67 +344,7 @@ void primeraConexion(){
     Serial.println("No se pudo conectar de eeprom.");
   }
 }
-String leer(int addr) {
-  byte lectura;
-  String strlectura;
-  for (int i = addr; i < addr+50; i++) {
-     lectura = EEPROM.read(i);
-     if (lectura != 255) {
-       strlectura += (char)lectura;
-     }
-  }
-  return strlectura;
-}
-void buscarDatosEEPROM(){
-  leer(0).toCharArray(ssid_eeprom, 50);
-  leer(50).toCharArray(pass_eeprom, 50);
-}
-
-void webSocketEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t length) {
-  switch (type) {
-    case WStype_DISCONNECTED:
-      Serial.printf("Cliente %u desconectado\n", num);
-      break;
-    case WStype_CONNECTED:
-      {
-        IPAddress ip = webSocket.remoteIP(num);
-        Serial.printf("Nuevo cliente conectado desde %d.%d.%d.%d\n", ip[0], ip[1], ip[2], ip[3]);
-      }
-      break;
-    case WStype_TEXT:
-      // Puedes agregar lógica aquí si deseas recibir datos desde el cliente
-      String mensaje = String((char *)payload);  // Convertir el mensaje a String
-        Serial.println("Mensaje recibido: " + mensaje);
-        
-        if (mensaje == "ON") {
-          digitalWrite(pines[3], HIGH);  // Enciende el pin
-          Serial.println("Foco Encendido");
-        }
-        else if (mensaje == "OFF") {
-          digitalWrite(pines[3], LOW);  // Apaga el pin
-          Serial.println("Foco Apagado");
-        }
-        else {
-          Serial.println("Comando desconocido");
-        }
-      break;
-  }
-}
-
-void handleControl() {
-  String pin = server.arg("pin");
-  String state = server.arg("state");
-
-  int pinNumber = pin.toInt();
-  int pinState = (state == "ON") ? HIGH : LOW;
-
-  // Activa o desactiva el pin correspondiente
-  digitalWrite(pinNumber, pinState);
-  Serial.println(pinState);
-  // Responder al cliente
-  server.send(200, "text/plain", "Pin " + pin + " set to " + state);
-}
-
+// ================= FIN Otras Funciones =================
 void setup() {
   Serial.begin(115200);
   EEPROM.begin(512);
@@ -394,12 +388,19 @@ void setup() {
   //lectura de todas las salidas en la memoria EEPROM
   for (int i = 0; i < numPines; i++){
     Salida b1=leerSalidaDeEEPROM(direccionesEEPROM[i]);
-    if (!gpioToPin(b1.gpio).equals("Desconocido")){
+      // Serial.println("Salida guardada en direccion: ");
+      // Serial.println(direccionesEEPROM[i]);
+      // Serial.println(b1.nombre);
+      // Serial.println(pines[b1.gpio-1]);
+      // Serial.println(b1.gpio);
+      // Serial.println(b1.estado);
+    if (pinToDpin(b1.gpio)){
       Serial.println("Salida guardada en direccion: ");
       Serial.println(direccionesEEPROM[i]);
       Serial.println(b1.nombre);
-      Serial.println(pines[b1.gpio-1]);
+      Serial.print("Pin de la tarjeta: ");
       Serial.println(b1.gpio);
+      Serial.print("Estado: ");
       Serial.println(b1.estado);
     }
   }
