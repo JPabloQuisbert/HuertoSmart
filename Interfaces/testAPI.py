@@ -5,9 +5,9 @@ url = "http://192.168.16.236/update"
 
 # Datos que quieres enviar en la solicitud POST
 data = {
-    "nombre": "Led incorporado",
-    "pin": "4",
-    "estado": "0"
+    "nombre": "255",
+    "pin": "2",
+    "estado": "1"
 }
 
 # Hacer la solicitud POST
