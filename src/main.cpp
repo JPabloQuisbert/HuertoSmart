@@ -191,30 +191,7 @@ void handleRoot() {
         html += "<label for='"+pinLabels[i]+"'>"+pinLabels[i]+": sin registro</label><input type='checkbox' id='"+pinLabels[i]+"' onchange='controlPin("+String(b1.gpio)+", this.checked)'><br>";     
         digitalWrite(pinToDpin(b1.gpio),LOW);
       }
-      
-      // digitalWrite(pinToDpin(b1.gpio),b1.estado);
-    //   html += "<label for='"+pinLabels[i]+"'>Digital "+String(pinLabels[i])+": "+String(b1.nombre[0]!=255 ? b1.nombre:"")
-    //       +"</label><input type='checkbox' id='"+pinLabels[i]
-    //       +"' value='1' " + String(b1.estado ? "checked" : "") 
-    //       +"onchange='controlPin("+String(b1.gpio)+", this.checked)'><br>";
     }
-    // 
-    //   Salida b1=leerSalidaDeEEPROM(direccionesEEPROM[i]);
-    //   html += "<label for='pin1'>D" +String(b1.gpio)+" "
-    //   + String(b1.nombre[0]!=255 ? b1.nombre:"")
-    //   +" </label><input type='checkbox' id='pin"+String(b1.gpio)+"' value='1' +name='pin'" +String(b1.gpio) 
-    //   + String(b1.estado ? "checked" : "") 
-    //   + "onchange='controlPin("+String(pinToDpin(b1.gpio))+
-    //   +", this.checked)'><br>";
-    
-    
-    // html += "<label for='pin1'>D1</label><input type='checkbox' id='pin1' onchange='controlPin(5, this.checked)'><br>";
-    // html += "<label for='pin2'>D2</label><input type='checkbox' id='pin2' onchange='controlPin(4, this.checked)'><br>";
-    // html += "<label for='pin3'>D3</label><input type='checkbox' id='pin3' onchange='controlPin(0, this.checked)'><br>";
-    // html += "<label for='pin4'>D4</label><input type='checkbox' id='pin4' onchange='controlPin(2, this.checked)'><br>";
-    // html += "<label for='pin5'>D5</label><input type='checkbox' id='pin5' onchange='controlPin(14, this.checked)'><br>";
-    // html += "<label for='pin4'>D6</label><input type='checkbox' id='pin6' onchange='controlPin(12, this.checked)'><br>";
-    // html += "<label for='pin5'>D7</label><input type='checkbox' id='pin7' onchange='controlPin(13, this.checked)'><br>";
   }
   html += "<script>";
   html += "function controlPin(pin, state) {";
@@ -332,6 +309,52 @@ void handleDelete() {
     server.send(400, "text/plain", "Faltan parámetros");
   }
 }
+// Ruta GET para leer datos del sensor
+void handleGet(){
+  // Leer los valores de temperatura y humedad
+  float temperatura = dht.getTemperature();   // Temperatura en grados Celsius
+  float humedad = dht.getHumidity();          // Humedad relativa
+
+  // Verificar si las lecturas son válidas
+  if (isnan(temperatura) || isnan(humedad)) {
+    server.send(500, "text/plain", "Error al leer los datos del sensor");
+  } else {
+    // Crear una respuesta en formato JSON
+    String jsonResponse = "{";
+    jsonResponse += "\"temperatura\": " + String(temperatura) + ",";
+    jsonResponse += "\"humedad\": " + String(humedad);
+    jsonResponse += "}";
+
+    // Enviar la respuesta con los datos
+    server.send(200, "application/json", jsonResponse);
+  }
+}
+
+void handlePines() {
+  String response = "{ \"pines\": [";
+  // Crear el JSON con los nombres de los pines y sus estados de todas las salidas en la memoria EEPROM
+  for (int i = 0; i < numPines; i++){
+    Salida b1=leerSalidaDeEEPROM(direccionesEEPROM[i]);    
+    if (b1.nombre[0]!=255){                                     // Aseguramos que sea una salida valida
+      response += "{";
+      response += "\"pin\": \"" + String(b1.gpio) + "\", ";
+      response += "\"nombre\": \"" + String(b1.nombre) + "\", ";
+      response += "\"estado\": " + String(b1.estado);
+      response += "}";
+    }
+    else{
+      response += "{";
+      response += "\"pin\": \"" + String(i+1) + "\", ";
+      response += "\"nombre\": \"" + String("Sin registro") + "\", ";
+      response += "\"estado\": " + String("0");
+      response += "}";
+    }
+    if (i < numPines-1) response += ", ";  // Para no agregar coma al final
+  }
+  response += "] }";
+  // Enviar la respuesta al cliente
+  server.send(200, "application/json", response);
+}
 // ================= Fin Manejos Solicitudes al servidor http
 
 // ================= WEB socket =================
@@ -413,11 +436,6 @@ void setup() {
     pinMode(pines[i], OUTPUT);
   }
 
-  // Serial.println("Guardando salida a1...");
-  // Salida a1={"led prueba",pines[3],1};
-  // guardarSalidaEnEEPROM(direccionesEEPROM[0],a1);
-  // Serial.println("done...!");
-
   // Configura el AP con la IP, puerta de enlace y máscara de subred deseadas
   WiFi.softAPConfig(local_ip, gateway, subnet);
 
@@ -431,8 +449,10 @@ void setup() {
   server.on("/", HTTP_GET, handleRoot);
   server.on("/connect", HTTP_POST, handleConnect);
   server.on("/control", HTTP_GET, handleControl);
-  server.on("/update", HTTP_POST, handlePost);   // Ruta POST
-  server.on("/delete", HTTP_DELETE, handleDelete); //Ruta DELETE
+  server.on("/update", HTTP_POST, handlePost);      // Ruta POST
+  server.on("/delete", HTTP_DELETE, handleDelete);  // Ruta DELETE
+  server.on("/get_sensor", HTTP_GET, handleGet);      // Ruta GET
+  server.on("/get_pines", HTTP_GET, handlePines);      // Ruta GET
 
   // Iniciamos el servidor
   server.begin();
@@ -450,9 +470,9 @@ void setup() {
 
   //lectura de todas las salidas en la memoria EEPROM
   for (int i = 0; i < numPines; i++){
-    Salida b1=leerSalidaDeEEPROM(direccionesEEPROM[i]);
-    digitalWrite(pinToDpin(b1.gpio),b1.estado);
-    if (pinToDpin(b1.gpio)){
+    Salida b1=leerSalidaDeEEPROM(direccionesEEPROM[i]);    
+    if (b1.nombre[0]!=255){                                     // Aseguramos que sea una salida valida
+      digitalWrite(pinToDpin(b1.gpio),b1.estado);               // Escribimos el estado de la salida
       Serial.println("Salida guardada en direccion: ");
       Serial.println(direccionesEEPROM[i]);
       Serial.println(b1.nombre);
@@ -460,6 +480,9 @@ void setup() {
       Serial.println(b1.gpio);
       Serial.print("Estado: ");
       Serial.println(b1.estado);
+    }
+    else{
+      digitalWrite(pines[i],false);               // Escribimos el estado de la salida
     }
   }
 }
