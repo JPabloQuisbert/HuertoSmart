@@ -91,16 +91,22 @@ void saveSSIDyPwdEEPROM(char ssid_eeprom[50],char pass_eeprom[50]){
 void guardarSalidaEnEEPROM(int direccion, Salida salida) {  
   // Guardar cada carácter del nombre
   for (int i = 0; i < sizeof(salida.nombre); i++) {
-    EEPROM.write(direccion + i, salida.nombre[i]);
+    if (EEPROM.read(direccion + i) != salida.nombre[i]) {
+      EEPROM.write(direccion + i, salida.nombre[i]);
+    }
   }
   direccion += sizeof(salida.nombre);  // Avanzar la dirección después de guardar el nombre
   
-  // Guardar el pin (1 byte)
-  EEPROM.write(direccion, salida.gpio);         
+  // Guardar el pin (1 byte)  
+  if (EEPROM.read(direccion) != salida.gpio) {
+    EEPROM.write(direccion, salida.gpio);
+  }        
   direccion++;
   
-  // Guardar el estado (1 byte)
-  EEPROM.write(direccion, salida.estado);
+  // Guardar el estado (1 byte)  
+  if (EEPROM.read(direccion) != salida.estado) {
+    EEPROM.write(direccion, salida.estado);
+  }
   
   // Guardar los cambios en la EEPROM
   EEPROM.commit();
@@ -191,6 +197,7 @@ void handleRoot() {
         html += "<label for='"+pinLabels[i]+"'>"+pinLabels[i]+": sin registro</label><input type='checkbox' id='"+pinLabels[i]+"' onchange='controlPin("+String(b1.gpio)+", this.checked)'><br>";     
         digitalWrite(pinToDpin(b1.gpio),LOW);
       }
+      yield();
     }
   }
   html += "<script>";
@@ -234,7 +241,7 @@ void handleConnect() {
 
   if (WiFi.status() == WL_CONNECTED) {
     // Enviamos una página de éxito
-    server.send(200, "text/html", "<html><body><h1>Conexión exitosa!</h1><p>" +WiFi.SSID() +"</p><p>IP del dispositivo: " + WiFi.localIP().toString() + "</p></body></html>");
+    // server.send(200, "text/html", "<html><body><h1>Conexión exitosa!</h1><p>" +WiFi.SSID() +"</p><p>IP del dispositivo: " + WiFi.localIP().toString() + "</p></body></html>");
     Serial.println("Conexión exitosa.");
     Serial.print("SSID del dispositivo: ");
     Serial.println(WiFi.SSID());
@@ -243,12 +250,9 @@ void handleConnect() {
     strcpy(ssid_eeprom, ssid.c_str());
     strcpy(pass_eeprom, password.c_str());
     saveSSIDyPwdEEPROM(ssid_eeprom,pass_eeprom);
-    // // Cambiamos el modo del ESP a STA (Cliente) y apagamos el AP
-    // WiFi.softAPdisconnect(true);  // Desconecta el punto de acceso
-    // Serial.println("Modo AP apagado, ahora en modo Cliente.");
   } else {
     // Si no se conecta, mostramos un mensaje de error
-    server.send(200, "text/html", "<html><body><h1>Error al conectar a la red Wi-Fi.</h1><p>Por favor, intenta nuevamente.</p></body></html>");
+    // server.send(200, "text/html", "<html><body><h1>Error al conectar a la red Wi-Fi.</h1><p>Por favor, intenta nuevamente.</p></body></html>");
     Serial.println("No se pudo conectar.");
   }
 }
@@ -331,6 +335,10 @@ void handleGet(){
 }
 
 void handlePines() {
+  // Agregar encabezados CORS para permitir solicitudes desde cualquier origen
+  server.sendHeader("Access-Control-Allow-Origin", "*");  // Permitir cualquier origen
+  server.sendHeader("Access-Control-Allow-Methods", "GET, POST");  // Métodos permitidos
+  server.sendHeader("Access-Control-Allow-Headers", "Content-Type");  // Cabeceras permitidas
   String response = "{ \"pines\": [";
   // Crear el JSON con los nombres de los pines y sus estados de todas las salidas en la memoria EEPROM
   for (int i = 0; i < numPines; i++){
@@ -350,6 +358,7 @@ void handlePines() {
       response += "}";
     }
     if (i < numPines-1) response += ", ";  // Para no agregar coma al final
+    yield();
   }
   response += "] }";
   // Enviar la respuesta al cliente
@@ -360,6 +369,10 @@ void handlePines() {
 // ================= WEB socket =================
 void webSocketEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t length) {
   switch (type) {
+    case WStype_PING:
+      webSocket.sendPing(num);
+      Serial.println("here");
+      break;
     case WStype_DISCONNECTED:
       Serial.printf("Cliente %u desconectado\n", num);
       break;
@@ -372,21 +385,22 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t length)
     case WStype_TEXT:
       // Puedes agregar lógica aquí si deseas recibir datos desde el cliente
       String mensaje = String((char *)payload);  // Convertir el mensaje a String
-        Serial.println("Mensaje recibido: " + mensaje);
+        //Serial.println("Mensaje recibido: " + mensaje);
         
-        if (mensaje == "ON") {
-          digitalWrite(pines[3], HIGH);  // Enciende el pin
-          Serial.println("Foco Encendido");
-        }
-        else if (mensaje == "OFF") {
-          digitalWrite(pines[3], LOW);  // Apaga el pin
-          Serial.println("Foco Apagado");
-        }
-        else {
-          Serial.println("Comando desconocido");
-        }
+        // if (mensaje == "ON") {
+        //   digitalWrite(pines[3], HIGH);  // Enciende el pin
+        //   Serial.println("Foco Encendido");
+        // }
+        // else if (mensaje == "OFF") {
+        //   digitalWrite(pines[3], LOW);  // Apaga el pin
+        //   Serial.println("Foco Apagado");
+        // }
+        // else {
+        //   Serial.println("Comando desconocido");
+        // }
       break;
   }
+  delay(10);
 }
 // ================= FIN WEB socket =================
 
@@ -410,11 +424,12 @@ void primeraConexion(){
     delay(1000);
     timeout++;
     Serial.print(".");
+    yield();
   }
 
   if (WiFi.status() == WL_CONNECTED) {
     // Enviamos una página de éxito
-    server.send(200, "text/html", "<html><body><h1>Conexión exitosa desde eeprom!</h1><p>" +WiFi.SSID() +"</p><p>IP del dispositivo: " + WiFi.localIP().toString() + "</p></body></html>");
+    // server.send(200, "text/html", "<html><body><h1>Conexión exitosa desde eeprom!</h1><p>" +WiFi.SSID() +"</p><p>IP del dispositivo: " + WiFi.localIP().toString() + "</p></body></html>");
     Serial.println("Conexión exitosa desde EEPROM.");
     Serial.print("SSID del dispositivo: ");
     Serial.println(WiFi.SSID());
@@ -422,8 +437,16 @@ void primeraConexion(){
     Serial.println(WiFi.localIP());
   } else {
     // Si no se conecta, mostramos un mensaje de error
-    server.send(200, "text/html", "<html><body><h1>Error al conectar a la red Wi-Fi de EEPROM.</h1><p>Por favor, intenta nuevamente.</p></body></html>");
+    // server.send(200, "text/html", "<html><body><h1>Error al conectar a la red Wi-Fi de EEPROM.</h1><p>Por favor, intenta nuevamente.</p></body></html>");
     Serial.println("No se pudo conectar de eeprom.");
+    // // Activar el modo AP
+    // WiFi.softAPConfig(local_ip, gateway, subnet);
+    // WiFi.softAP(ssid_ap, password_ap);
+    
+    // Serial.print("AP iniciado: ");
+    // Serial.println(ssid_ap);
+    // Serial.print("IP del AP: ");
+    // Serial.println(WiFi.softAPIP());
   }
 }
 // ================= FIN Otras Funciones =================
@@ -431,11 +454,36 @@ void setup() {
   Serial.begin(115200);
   EEPROM.begin(512);
 
+  leerSSIDyPwdEEPROM();
   // Configurar los pines como salidas
   for (int i = 0; i < numPines; i++) {
     pinMode(pines[i], OUTPUT);
   }
+  //Iniciamos el sensor
+  dht.setup(D0, DHTesp::DHT22); // Conectar al GPIO 16, se usa el pin D0
 
+  //lectura de todas las salidas en la memoria EEPROM
+  for (int i = 0; i < numPines; i++){
+    Salida b1=leerSalidaDeEEPROM(direccionesEEPROM[i]);    
+    if (b1.nombre[0]!=255){                                     // Aseguramos que sea una salida valida
+      digitalWrite(pinToDpin(b1.gpio),b1.estado);               // Escribimos el estado de la salida
+      Serial.println("Salida guardada en direccion: ");
+      Serial.println(direccionesEEPROM[i]);
+      Serial.println(b1.nombre);
+      Serial.print("Pin de la tarjeta: ");
+      Serial.println(b1.gpio);
+      Serial.print("Estado: ");
+      Serial.println(b1.estado);
+    }
+    else{
+      digitalWrite(pines[i],false);               // Escribimos el estado de la salida
+    }
+    yield();
+  }
+  primeraConexion();  //Conecta al SSID leido de la eeprom
+
+  // Activa AP + STA
+  WiFi.mode(WIFI_AP_STA);
   // Configura el AP con la IP, puerta de enlace y máscara de subred deseadas
   WiFi.softAPConfig(local_ip, gateway, subnet);
 
@@ -462,29 +510,7 @@ void setup() {
   webSocket.begin();
   webSocket.onEvent(webSocketEvent);
 
-  leerSSIDyPwdEEPROM();
-  primeraConexion();
   
-  //Iniciamos el sensor
-  dht.setup(D0, DHTesp::DHT22); // Conectar al GPIO 16, se usa el pin D0
-
-  //lectura de todas las salidas en la memoria EEPROM
-  for (int i = 0; i < numPines; i++){
-    Salida b1=leerSalidaDeEEPROM(direccionesEEPROM[i]);    
-    if (b1.nombre[0]!=255){                                     // Aseguramos que sea una salida valida
-      digitalWrite(pinToDpin(b1.gpio),b1.estado);               // Escribimos el estado de la salida
-      Serial.println("Salida guardada en direccion: ");
-      Serial.println(direccionesEEPROM[i]);
-      Serial.println(b1.nombre);
-      Serial.print("Pin de la tarjeta: ");
-      Serial.println(b1.gpio);
-      Serial.print("Estado: ");
-      Serial.println(b1.estado);
-    }
-    else{
-      digitalWrite(pines[i],false);               // Escribimos el estado de la salida
-    }
-  }
 }
 
 void loop() {
@@ -496,8 +522,6 @@ void loop() {
   String sensorValueStr = String(temperature);
   // Enviar el valor de la lectura analógica a todos los clientes conectados
   webSocket.broadcastTXT(sensorValueStr);
-  // Escuchar por solicitudes entrantes
-  server.handleClient();
   unsigned long currentMillis = millis();  // Obtenemos el tiempo actual en milisegundos
   // Verificamos si ha pasado el intervalo definido
   if (currentMillis - previousMillis >= interval) {
@@ -508,5 +532,6 @@ void loop() {
     // Serial.print(temperature);
     // Serial.println(" Se leyo en el tiempo ");  // Enviamos el valor leído al monitor serial
   }
+  //yield();  // <--- Importante para evitar el WDT
   delay(50);
 }

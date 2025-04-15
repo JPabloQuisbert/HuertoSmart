@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lectura Analógica ESP8266</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    #status {
+      font-size: 1.2rem;
+      font-weight: bold;
+    }
+    #status.disconnected {
+      color: red;
+    }
+    .switch-label {
+      font-weight: bold;
+      margin-right: 10px;
+    }
+  </style>
+</head>
+<body class="bg-light text-dark py-4">
+
+  <div class="container">
+    <!-- Estado de la conexión -->
+    <div class="alert alert-info d-flex justify-content-between align-items-center" role="alert">
+      <div><strong>Estado WebSocket:</strong> <span id="status" class="text-success">Conectado</span></div>
+      <div id="errores" class="text-danger"></div>
+    </div>
+
+    <!-- IP del WebSocket -->
+    <div class="card mb-4">
+      <div class="card-body">
+        <h4 class="card-title">Configuración de WebSocket</h4>
+        <p class="card-text">Ingrese la IP del WebSocket:</p>
+        <input type="text" class="form-control" id="wsIP" placeholder="Ejemplo: ws://192.168.16.236:81" value="ws://192.168.16.236:81">
+        <button class="btn btn-primary mt-3" onclick="reconnectWebSocket()">Conectar</button>
+      </div>
+    </div>
+
+    <!-- Botón para actualizar los pines -->
+    <div class="card mb-4">
+      <div class="card-body">
+        <h4 class="card-title">Actualizar los Pines</h4>
+        <button class="btn btn-success" onclick="loadPinControls()">Actualizar Pines</button>
+      </div>
+    </div>
+
+    <!-- Lectura analógica -->
+    <div class="card mb-4">
+      <div class="card-body">
+        <h4 class="card-title">Lectura Analógica en Tiempo Real</h4>
+        <p class="card-text">Valor del sensor: <span id="sensorValue" class="fw-bold">Esperando...</span></p>
+      </div>
+    </div>
+
+    <!-- Control del foco con interruptores dinámicos -->
+    <div id="controlFoco" class="mb-4">
+      <h4>Control de Pines</h4>
+      <!-- Los interruptores se insertarán aquí dinámicamente -->
+    </div>
+
+  </div>
+
+  <script>
+    let socket;
+    let pingInterval;
+    let lastPingTime = Date.now();
+    let reconnectDelay = 2000; // Tiempo de espera para reconexión (1 segundo)
+
+    function reconnectWebSocket() {
+      const wsIP = document.getElementById('wsIP').value.trim();
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.close();  // Cierra la conexión actual si ya está abierta
+      }
+      socket = new WebSocket(wsIP); // Usa la IP del usuario
+
+      socket.onmessage = function(event) {
+        document.getElementById('sensorValue').textContent = event.data;
+        lastPingTime = Date.now();
+      };
+
+      socket.onopen = function() {
+        console.log('Conectado al servidor WebSocket');
+        document.getElementById('status').textContent = "Conectado";
+        document.getElementById('status').classList.remove('disconnected');
+        document.getElementById('status').classList.add('text-success');
+        pingInterval = setInterval(checkConnection, 100);
+        loadPinControls();  // Cargar los interruptores de los pines
+      };
+
+    socket.onclose = function () {
+        console.warn('⚠️ Conexión WebSocket cerrada. Reintentando en 1 segundo...');
+        document.getElementById('status').textContent = "Conexión perdida";
+        document.getElementById('status').classList.add('disconnected');
+        document.getElementById('status').classList.remove('text-success');
+        clearInterval(pingInterval);
+
+        // Intentar reconectar después del retraso
+        setTimeout(() => {
+            location.reload();  // Recarga la página
+        }, reconnectDelay);
+      };
+
+      socket.onerror = function(error) {
+        console.error("Error en WebSocket: ", error);
+        document.getElementById('errores').textContent = "¡ERROR!";
+      };
+    }
+
+    function loadPinControls() {
+      // Realizar la solicitud HTTP GET para obtener los pines
+      fetch('http://192.168.16.236/get_pines')
+        .then(response => response.json())
+        .then(data => {
+          const pinContainer = document.getElementById('controlFoco');
+          pinContainer.innerHTML = ''; // Limpiar antes de cargar los nuevos interruptores
+          data.pines.forEach(pin => {
+            const switchElement = document.createElement('div');
+            switchElement.classList.add('form-check', 'form-switch');
+            switchElement.innerHTML = `
+              <input class="form-check-input" type="checkbox" id="pinSwitch-${pin.pin}" ${pin.estado ? 'checked' : ''} onchange="togglePin(${pin.pin}, this)">
+              <label class="form-check-label" for="pinSwitch-${pin.pin}">${pin.nombre}</label>
+            `;
+            pinContainer.appendChild(switchElement);
+          });
+        })
+        .catch(error => console.error('Error al cargar los pines:', error));
+    }
+
+    function togglePin(pin, switchElement) {
+      const estado = switchElement.checked ? 1 : 0;
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ pin, estado })); // Enviar la nueva configuración al servidor
+      } else {
+        console.log("WebSocket no está conectado.");
+        document.getElementById('status').textContent = "WebSocket no está conectado.";
+        document.getElementById('status').classList.add('disconnected');
+      }
+    }
+
+    function checkConnection() {
+      if (Date.now() - lastPingTime > 200) {
+        console.log("Conexión perdida, no hay respuesta del servidor");
+        socket.close();
+      } else {
+        socket.send("ping");
+      }
+    }
+
+    // Intentar conectar con la IP predeterminada al cargar la página
+    window.onload = reconnectWebSocket;
+  </script>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
