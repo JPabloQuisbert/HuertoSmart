@@ -48,7 +48,7 @@ u_int8_t pinToDpin(int pin){
   case 5:  return D5;
   case 6:  return D6;
   case 7:  return D7;
-  default: return NULL;
+  default: return 255;
   }
 }
 // Definimos los pines que queremos controlar
@@ -143,7 +143,8 @@ Salida leerSalidaDeEEPROM(int direccion) {
   
   // Leer el estado
   salida.estado = EEPROM.read(direccion);
-  
+
+  delay(50);
   return salida;
 }
 // =================FIN Funciones de manejo de EERPOM
@@ -212,6 +213,7 @@ void handleRoot() {
   html += "</body></html>";
   
   server.send(200, "text/html", html);
+  delay(50);
 }
 
 // Maneja la solicitud POST para conectar a la red seleccionada
@@ -275,7 +277,25 @@ void handlePost() {
     server.send(400, "text/plain", "Faltan parámetros");
   }
 }
-
+void handleSetPin() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");  // Permitir cualquier origen
+  server.sendHeader("Access-Control-Allow-Methods", "GET, POST");  // Métodos permitidos
+  server.sendHeader("Access-Control-Allow-Headers", "Content-Type");  // Cabeceras permitidas
+  if (server.hasArg("nombre") && server.hasArg("pin") && server.hasArg("estado")) {
+    Salida datoRecibido;
+    server.arg("nombre").toCharArray(datoRecibido.nombre, sizeof(datoRecibido.nombre));
+    datoRecibido.gpio=server.arg("pin").toInt();
+    datoRecibido.estado=server.arg("estado").toInt();
+    
+    
+    digitalWrite(pines[datoRecibido.gpio-1],datoRecibido.estado);
+    Serial.println(datoRecibido.gpio);
+    Serial.println(datoRecibido.estado);
+    server.send(200, "text/plain", "Datos actualizados exitosamente");
+  } else {
+    server.send(400, "text/plain", "Faltan parámetros");
+  }
+}
 void handleControl() {
   String pin = server.arg("pin");
   String state = server.arg("state");
@@ -315,6 +335,9 @@ void handleDelete() {
 }
 // Ruta GET para leer datos del sensor
 void handleGet(){
+  server.sendHeader("Access-Control-Allow-Origin", "*");  // Permitir cualquier origen
+  server.sendHeader("Access-Control-Allow-Methods", "GET, POST");  // Métodos permitidos
+  server.sendHeader("Access-Control-Allow-Headers", "Content-Type");  // Cabeceras permitidas
   // Leer los valores de temperatura y humedad
   float temperatura = dht.getTemperature();   // Temperatura en grados Celsius
   float humedad = dht.getHumidity();          // Humedad relativa
@@ -453,7 +476,8 @@ void primeraConexion(){
 void setup() {
   Serial.begin(115200);
   EEPROM.begin(512);
-
+  String reset_reason = ESP.getResetReason();
+  Serial.println("Motivo del reinicio: " + reset_reason);
   leerSSIDyPwdEEPROM();
   // Configurar los pines como salidas
   for (int i = 0; i < numPines; i++) {
@@ -501,7 +525,7 @@ void setup() {
   server.on("/delete", HTTP_DELETE, handleDelete);  // Ruta DELETE
   server.on("/get_sensor", HTTP_GET, handleGet);      // Ruta GET
   server.on("/get_pines", HTTP_GET, handlePines);      // Ruta GET
-
+  server.on("/set_pin", HTTP_POST, handleSetPin);      // Ruta POST
   // Iniciamos el servidor
   server.begin();
   Serial.println("Servidor iniciado.");
@@ -515,19 +539,20 @@ void setup() {
 
 void loop() {
   server.handleClient();  // Maneja las peticiones HTTP
-  webSocket.loop();  // Mantiene la comunicación WebSocket
+  //webSocket.loop();  // Mantiene la comunicación WebSocket
 
   // Leer el valor analógico del pin A0 (0-1023)
   int sensorValue = analogRead(A0);
   String sensorValueStr = String(temperature);
   // Enviar el valor de la lectura analógica a todos los clientes conectados
-  webSocket.broadcastTXT(sensorValueStr);
+  //webSocket.broadcastTXT(sensorValueStr);
   unsigned long currentMillis = millis();  // Obtenemos el tiempo actual en milisegundos
   // Verificamos si ha pasado el intervalo definido
   if (currentMillis - previousMillis >= interval) {
     previousMillis = currentMillis;  // Actualizamos el tiempo de la última lectura
     humidity = dht.getHumidity();
     temperature = dht.getTemperature();
+    
     // Realizamos la lectura del sensor
     // Serial.print(temperature);
     // Serial.println(" Se leyo en el tiempo ");  // Enviamos el valor leído al monitor serial

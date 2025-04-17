@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lectura Analógica ESP8266</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    #status {
+      font-size: 1.2rem;
+      font-weight: bold;
+    }
+    #status.disconnected {
+      color: red;
+    }
+    .switch-label {
+      font-weight: bold;
+      margin-right: 10px;
+    }
+  </style>
+</head>
+<body class="bg-light text-dark py-4">
+
+  <div class="container">
+    <!-- Estado de la conexión -->
+    <div class="alert alert-info d-flex justify-content-between align-items-center" role="alert">
+      <div><strong>Estado de la Conexión:</strong> <span id="status" class="text-success">Conectado</span></div>
+      <div id="errores" class="text-danger"></div>
+    </div>
+
+    <!-- IP del servidor -->
+    <div class="card mb-4">
+      <div class="card-body">
+        <h4 class="card-title">Configuración del Servidor</h4>
+        <p class="card-text">Ingrese la IP del servidor:</p>
+        <input type="text" class="form-control" id="serverIP" placeholder="Ejemplo: http://192.168.16.236" value="http://192.168.16.236">
+        <button class="btn btn-primary mt-3" onclick="updateSensorData()">Conectar</button>
+      </div>
+    </div>
+
+    <!-- Botón para actualizar los pines -->
+    <div class="card mb-4">
+      <div class="card-body">
+        <h4 class="card-title">Actualizar los Pines</h4>
+        <button class="btn btn-success" onclick="loadPinControls()">Actualizar Pines</button>
+        <button class="btn btn-warning mt-3" onclick="updateNodeMCUData()">Actualizar Datos NodeMCU</button>
+      </div>
+    </div>
+
+    <!-- Lectura analógica -->
+    <div class="card mb-4">
+      <div class="card-body">
+        <h4 class="card-title">Lectura Analógica en Tiempo Real</h4>
+        <p class="card-text">Temperatura: <span id="temperatura" class="fw-bold">Esperando...</span> °C</p>
+        <p class="card-text">Humedad: <span id="humedad" class="fw-bold">Esperando...</span> %</p>
+      </div>
+    </div>
+
+    <!-- Control del foco con interruptores dinámicos -->
+    <div id="controlFoco" class="mb-4">
+      <h4>Control de Pines</h4>
+      <!-- Los interruptores se insertarán aquí dinámicamente -->
+    </div>
+
+  </div>
+
+  <script>
+    let serverURL = '';
+
+    function updateSensorData() {
+      const serverIP = document.getElementById('serverIP').value.trim();
+      serverURL = serverIP;
+
+      // Obtener los datos de temperatura y humedad mediante una petición GET
+      fetch(`${serverURL}/get_sensor`)
+        .then(response => response.json())
+        .then(data => {
+          if (data && data.temperatura !== undefined && data.humedad !== undefined) {
+            // Actualizar la interfaz con los valores de temperatura y humedad
+            document.getElementById('temperatura').textContent = data.temperatura.toFixed(2);
+            document.getElementById('humedad').textContent = data.humedad.toFixed(2);
+          } else {
+            document.getElementById('temperatura').textContent = "Error al obtener datos";
+            document.getElementById('humedad').textContent = "Error al obtener datos";
+          }
+        })
+        .catch(error => {
+          console.error('Error al obtener los datos:', error);
+          document.getElementById('temperatura').textContent = "Error de conexión";
+          document.getElementById('humedad').textContent = "Error de conexión";
+        });
+    }
+
+    // function loadPinControls() {
+    //   // Realizar la solicitud HTTP GET para obtener los pines
+    //   fetch(`${serverURL}/get_pines`)
+    //     .then(response => response.json())
+    //     .then(data => {
+    //       const pinContainer = document.getElementById('controlFoco');
+    //       pinContainer.innerHTML = ''; // Limpiar antes de cargar los nuevos interruptores
+    //       data.pines.forEach(pin => {
+    //         const switchElement = document.createElement('div');
+    //         switchElement.classList.add('form-check', 'form-switch');
+    //         switchElement.innerHTML = ` 
+    //           <input class="form-check-input" type="checkbox" id="pinSwitch-${pin.pin}" ${pin.estado ? 'checked' : ''} onchange="togglePin(${pin.pin}, this)">
+    //           <label class="form-check-label" for="pinSwitch-${pin.pin}">${pin.nombre}</label>
+    //           <div class="mt-2">
+    //             <input type="text" id="pinName-${pin.pin}" class="form-control" value="${pin.nombre}" disabled placeholder="Editar nombre">
+    //             <button class="btn btn-secondary mt-2" onclick="savePinName(${pin.pin})">Guardar Nombre</button>
+    //           </div>
+    //         `;
+    //         pinContainer.appendChild(switchElement);
+    //       });
+    //     })
+    //     .catch(error => console.error('Error al cargar los pines:', error));
+    // }
+    function loadPinControls() {
+  // Realizar la solicitud HTTP GET para obtener los pines
+        fetch(`${serverURL}/get_pines`)
+        .then(response => response.json())
+        .then(data => {
+        const pinContainer = document.getElementById('controlFoco');
+        pinContainer.innerHTML = ''; // Limpiar antes de cargar los nuevos interruptores
+
+        // Crear interruptores para cada pin
+        data.pines.forEach(pin => {
+            const switchElement = document.createElement('div');
+            switchElement.classList.add('form-check', 'form-switch');
+            switchElement.innerHTML = `
+            <input class="form-check-input" type="checkbox" id="pinSwitch-${pin.pin}" ${pin.estado ? 'checked' : ''} onchange="togglePin(${pin.pin}, this)">
+            <input type="text" id="pinName-${pin.pin}" for="pinSwitch-${pin.pin}" class="form-control" value="${pin.nombre}" disabled placeholder="Editar nombre">            
+            `;
+            pinContainer.appendChild(switchElement);
+        });
+
+        // Agregar un botón al final de los pines
+        const buttonContainer = document.createElement('div');
+        buttonContainer.classList.add('mt-4', 'd-flex', 'justify-content-center');
+
+        const updateButton = document.createElement('button');
+        updateButton.classList.add('btn', 'btn-primary');
+        updateButton.textContent = 'Actualizar Datos de NodeMCU';
+        updateButton.onclick = () => {
+            // Llamar a una función para actualizar datos, o hacer cualquier acción que necesites
+            console.log('Actualizando datos...');
+            // Puedes añadir aquí una lógica de actualización si es necesario
+        };
+
+        buttonContainer.appendChild(updateButton);
+        pinContainer.appendChild(buttonContainer);
+        })
+        .catch(error => console.error('Error al cargar los pines:', error));
+    }
+
+
+    function togglePin(pin, switchElement) {
+        // Obtener el estado del checkbox (0 o 1)
+        const estado = switchElement.checked ? "1" : "0";
+        
+        // Obtener el nombre del pin desde el campo de texto correspondiente
+        const nombre = document.getElementById(`pinName-${pin}`).value.trim();
+
+        // Datos a enviar en la solicitud POST
+        const data = {
+            nombre: nombre,
+            pin: pin.toString(),
+            estado: estado
+        };
+
+        // Verificar si tenemos una URL del servidor
+        if (serverURL) {
+            fetch(`${serverURL}/set_pin`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded' // Formato similar al de Python
+            },
+            body: new URLSearchParams(data).toString() // Codificar los datos como 'application/x-www-form-urlencoded'
+            })
+            .then(response => {
+            if (response.ok) {
+                console.log('Pin actualizado');
+            } else {
+                console.error('Error al actualizar el pin');
+            }
+            })
+            .catch(error => {
+            console.error('Error en la solicitud:', error);
+            });
+        }
+    }
+
+    function savePinName(pin) {
+      const newName = document.getElementById(`pinName-${pin}`).value.trim();
+      if (newName && serverURL) {
+        fetch(`${serverURL}/set_pin_name`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ pin, nombre: newName })
+        }).then(response => {
+          if (response.ok) {
+            console.log('Nombre del pin actualizado');
+          } else {
+            console.error('Error al actualizar el nombre del pin');
+          }
+        });
+      }
+    }
+
+    function updateNodeMCUData() {
+      if (serverURL) {
+        const confirmUpdate = confirm('¿Estás seguro de que deseas actualizar los datos de NodeMCU?');
+        if (confirmUpdate) {
+          fetch(`${serverURL}/update_nodemcu_data`, {
+            method: 'POST',
+          }).then(response => {
+            if (response.ok) {
+              alert('Datos de NodeMCU actualizados correctamente');
+            } else {
+              alert('Error al actualizar los datos de NodeMCU');
+            }
+          });
+        }
+      }
+    }
+
+    // Intentar obtener la temperatura y humedad cuando se carga la página
+    window.onload = updateSensorData;
+  </script>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
